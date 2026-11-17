@@ -22,7 +22,7 @@ jobs:
           wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y -qq xvfb openbox pulseaudio pulseaudio-utils ffmpeg x11vnc novnc python3-websockify x11-xserver-utils ./google-chrome-stable_current_amd64.deb
           
-      - name: 2. Configure Virtual Display & Audio (480p)
+      - name: 2. Configure Virtual Display & Audio (16-Bit Color Mode)
         run: |
           pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
           pactl load-module module-null-sink sink_name=VirtualSpeaker || true
@@ -30,7 +30,8 @@ jobs:
           pactl set-sink-mute VirtualSpeaker 0 || true
           pactl set-sink-volume VirtualSpeaker 100% || true
           
-          Xvfb :99 -screen 0 854x480x24 -nolisten tcp &
+          # CRITICAL FIX: Dropped to 16-bit color (x16) to drastically reduce CPU/RAM usage
+          Xvfb :99 -screen 0 854x480x16 -nolisten tcp &
           sleep 3
           
           openbox &
@@ -51,13 +52,13 @@ jobs:
           
           WEB_URL=$(echo "${{ inputs.zoom_url }}" | sed -E -e 's@/(j|w|s)/([0-9]+)@/wc/\2/join@g' -e 's@#success@@g' -e 's@&fromPWA=1@@g')
           
-          google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=854,480 --disable-dev-shm-usage --disable-accelerated-2d-canvas --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
+          # CRITICAL FIX: Added aggressive Chrome flags to kill background rendering and save CPU
+          google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=854,480 --disable-dev-shm-usage --disable-accelerated-2d-canvas --disable-smooth-scrolling --disable-features=Translate --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
           
           ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa <<<y >/dev/null 2>&1
           ssh -o StrictHostKeyChecking=no -R 80:localhost:6080 nokey@localhost.run -T -n > tunnel.log 2>&1 &
           sleep 6
           echo "=================================================================="
-          echo "⚠️ CRITICAL: Close the VNC browser tab AFTER you join the meeting to stop the lag!"
           grep -o "https://[a-zA-Z0-9.-]*\.lhr\.life" tunnel.log | head -n 1 | awk '{print "👉 OPEN VNC TO JOIN MEETING: " $1 "/vnc.html?autoconnect=true&resize=scale"}'
           echo "=================================================================="
 
@@ -71,16 +72,16 @@ jobs:
           done) &
 
           while true; do
-            echo "🚀 Continuous Streaming to YouTube (480p at 12 FPS)..."
+            echo "🚀 Continuous Streaming to YouTube (Optimized for 2 Cores at 10 FPS)..."
             
-            ffmpeg -loglevel warning -stats -thread_queue_size 4096 -probesize 10M -analyzeduration 2M \
-              -f x11grab -draw_mouse 0 -framerate 12 -video_size 854x480 -i :99.0+0,0 \
+            # CRITICAL FIX: Framerate strictly 10fps, lowered bitrate to 800k, audio to 96k
+            ffmpeg -loglevel warning -stats -thread_queue_size 4096 -f x11grab -draw_mouse 0 -framerate 10 -video_size 854x480 -i :99.0+0,0 \
               -thread_queue_size 4096 -f pulse -ac 2 -i VirtualSpeaker.monitor \
               -map 0:v -map 1:a \
               -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 \
               -x264-params "ref=1:subme=0:me=dia:trellis=0:rc-lookahead=0:sync-lookahead=0:sliced-threads=1" \
-              -b:v 1000k -maxrate 1000k -bufsize 2000k -pix_fmt yuv420p -g 24 -bf 0 -fps_mode cfr \
-              -af "aresample=async=1:first_pts=0" -c:a aac -b:a 128k -ar 44100 \
+              -b:v 800k -maxrate 800k -bufsize 1600k -pix_fmt yuv420p -g 20 -bf 0 -fps_mode cfr \
+              -c:a aac -b:a 96k -ar 44100 \
               -flags +global_header \
               -f fifo -fifo_format flv -queue_size 600 \
               -drop_pkts_on_overflow 1 -attempt_recovery 1 -recovery_wait_time 1 -recover_any_error 1 \
