@@ -58,7 +58,7 @@ jobs:
           tar -xf ngrok-v3-stable-linux-amd64.tgz
           ./ngrok config add-authtoken "${{ secrets.NGROK_TOKEN }}"
           ./ngrok http 6080 --log=stdout > tunnel.log &
-          sleep 6
+          sleep 15
           
           echo "=================================================================="
           echo "⚠️ CRITICAL: Close the VNC browser tab AFTER you join the meeting to stop the lag!"
