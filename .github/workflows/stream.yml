@@ -9,12 +9,12 @@ on:
         type: string
 
 env:
-  DISPLAY: :99 # Globally fixes the Openbox display error across all steps
+  DISPLAY: :99
 
 jobs:
   stream:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # Keeps the server alive for exactly 6 hours
+    timeout-minutes: 360
     steps:
       - name: 1. Install Server Dependencies
         run: |
@@ -49,7 +49,6 @@ jobs:
           window.addEventListener('DOMContentLoaded', () => { const style = document.createElement('style'); style.innerHTML = \`[class*="chat-priview"], [class*="chat-preview"], [class*="notification"], [class*="toast"], [role="alert"] { display: none !important; opacity: 0 !important; visibility: hidden !important; } html.zm-clean footer, html.zm-clean #foot-bar, html.zm-clean [class*="footer"], html.zm-clean [id*="footer"], html.zm-clean header, html.zm-clean #header_container, html.zm-clean [class*="header"], html.zm-clean [class*="top-bar"], html.zm-clean [class*="meeting-info"], html.zm-clean .full-screen-widget { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }\`; document.head.appendChild(style); let timer; const showUI = () => { document.documentElement.classList.remove('zm-clean'); clearTimeout(timer); timer = setTimeout(() => document.documentElement.classList.add('zm-clean'), 3000); }; window.addEventListener('mousemove', showUI, { passive: true }); window.addEventListener('keydown', showUI, { passive: true }); timer = setTimeout(() => document.documentElement.classList.add('zm-clean'), 3000); });
           JS
           
-          # Fixed sed delimiter to prevent syntax errors
           WEB_URL=$(echo "${{ inputs.zoom_url }}" | sed -E -e 's@/(j|w|s)/([0-9]+)@/wc/\2/join@g' -e 's@#success@@g' -e 's@&fromPWA=1@@g')
           
           google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=1280,720 --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
@@ -64,7 +63,6 @@ jobs:
 
       - name: 4. Keep Audio Routed & Broadcast to YouTube
         run: |
-          # Route audio every 5 seconds in the background
           (while true; do
             for id in $(pactl list short sink-inputs | awk '{print $1}'); do
               pactl move-sink-input "$id" VirtualSpeaker 2>/dev/null || true
@@ -72,16 +70,15 @@ jobs:
             sleep 5
           done) &
 
-          # Start streaming
           while true; do
             echo "🚀 Continuous Streaming to YouTube..."
             ffmpeg -loglevel warning -stats -thread_queue_size 4096 -probesize 10M -analyzeduration 2M \
-              -f x11grab -draw_mouse 0 -framerate 30 -video_size 1280x720 -i :99.0+0,0 \
+              -f x11grab -draw_mouse 0 -framerate 24 -video_size 1280x720 -i :99.0+0,0 \
               -thread_queue_size 4096 -f pulse -ac 2 -i VirtualSpeaker.monitor \
               -map 0:v -map 1:a \
-              -c:v libx264 -preset veryfast -tune zerolatency -threads 0 \
+              -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 \
               -x264-params "ref=1:subme=0:me=dia:trellis=0:rc-lookahead=0:sync-lookahead=0" \
-              -b:v 2500k -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p -g 60 -bf 0 -fps_mode cfr \
+              -b:v 2500k -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p -g 48 -bf 0 -fps_mode cfr \
               -af "aresample=async=1:first_pts=0" -c:a aac -b:a 128k -ar 44100 \
               -flags +global_header \
               -f fifo -fifo_format flv -queue_size 600 \
