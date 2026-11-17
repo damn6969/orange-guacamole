@@ -23,12 +23,15 @@ jobs:
         run: |
           pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
           pactl load-module module-null-sink sink_name=VirtualSpeaker || true
-          pactl set-default-sink VirtualSpeaker
-          pactl set-sink-mute VirtualSpeaker 0
-          pactl set-sink-volume VirtualSpeaker 100%
+          pactl set-default-sink VirtualSpeaker || true
+          pactl set-sink-mute VirtualSpeaker 0 || true
+          pactl set-sink-volume VirtualSpeaker 100% || true
           
+          # Start Xvfb and wait 3 seconds for it to become fully available
           Xvfb :99 -screen 0 1280x720x24 -nolisten tcp &
-          x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -wait 50 -defer 50 -bg -quiet
+          sleep 3
+          
+          x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -wait 50 -defer 50 -bg -quiet || true
           /usr/bin/websockify --web /usr/share/novnc 6080 localhost:5900 &
           openbox &
 
