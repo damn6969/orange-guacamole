@@ -22,7 +22,7 @@ jobs:
           wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y -qq xvfb openbox pulseaudio pulseaudio-utils ffmpeg x11vnc novnc python3-websockify x11-xserver-utils ./google-chrome-stable_current_amd64.deb
           
-      - name: 2. Configure Virtual Display & Audio
+      - name: 2. Configure Virtual Display & Audio (Optimized for 2-Core CPU)
         run: |
           pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
           pactl load-module module-null-sink sink_name=VirtualSpeaker || true
@@ -30,14 +30,15 @@ jobs:
           pactl set-sink-mute VirtualSpeaker 0 || true
           pactl set-sink-volume VirtualSpeaker 100% || true
           
-          Xvfb :99 -screen 0 1280x720x24 -nolisten tcp &
+          # Reduced resolution to 540p to prevent CPU lag
+          Xvfb :99 -screen 0 960x540x24 -nolisten tcp &
           sleep 3
           
           openbox &
           x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -wait 50 -defer 50 -bg -quiet || true
           /usr/bin/websockify --web /usr/share/novnc 6080 localhost:5900 &
 
-      - name: 3. Launch Zoom & Web Viewer (Cloudflare)
+      - name: 3. Launch Zoom & Web Viewer (Localhost.run Tunnel)
         run: |
           mkdir -p /tmp/zoom_clean
           cat << 'EXT' > /tmp/zoom_clean/manifest.json
@@ -51,14 +52,15 @@ jobs:
           
           WEB_URL=$(echo "${{ inputs.zoom_url }}" | sed -E -e 's@/(j|w|s)/([0-9]+)@/wc/\2/join@g' -e 's@#success@@g' -e 's@&fromPWA=1@@g')
           
-          google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=1280,720 --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
+          # Bound Chrome to the smaller 960x540 window
+          google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=960,540 --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
           
-          wget -q -nc https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-          chmod +x cloudflared-linux-amd64
-          nohup ./cloudflared-linux-amd64 tunnel --url http://localhost:6080 > tunnel.log 2>&1 &
+          # Replaced Cloudflare with localhost.run to fix NXDOMAIN errors
+          ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa <<<y >/dev/null 2>&1
+          ssh -o StrictHostKeyChecking=no -R 80:localhost:6080 nokey@localhost.run -T -n > tunnel.log 2>&1 &
           sleep 6
           echo "=================================================================="
-          grep -o "https://[a-zA-Z0-9.-]*\.trycloudflare\.com" tunnel.log | head -n 1 | awk '{print "👉 OPEN VNC TO JOIN MEETING: " $1 "/vnc.html?autoconnect=true&resize=scale"}'
+          grep -o "https://[a-zA-Z0-9.-]*\.lhr\.life" tunnel.log | head -n 1 | awk '{print "👉 OPEN VNC TO JOIN MEETING: " $1 "/vnc.html?autoconnect=true&resize=scale"}'
           echo "=================================================================="
 
       - name: 4. Keep Audio Routed & Broadcast to YouTube
@@ -71,14 +73,14 @@ jobs:
           done) &
 
           while true; do
-            echo "🚀 Continuous Streaming to YouTube..."
+            echo "🚀 Continuous Streaming to YouTube (Optimized for 2 Cores)..."
             ffmpeg -loglevel warning -stats -thread_queue_size 4096 -probesize 10M -analyzeduration 2M \
-              -f x11grab -draw_mouse 0 -framerate 24 -video_size 1280x720 -i :99.0+0,0 \
+              -f x11grab -draw_mouse 0 -framerate 24 -video_size 960x540 -i :99.0+0,0 \
               -thread_queue_size 4096 -f pulse -ac 2 -i VirtualSpeaker.monitor \
               -map 0:v -map 1:a \
               -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 \
               -x264-params "ref=1:subme=0:me=dia:trellis=0:rc-lookahead=0:sync-lookahead=0" \
-              -b:v 2500k -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p -g 48 -bf 0 -fps_mode cfr \
+              -b:v 1500k -maxrate 1500k -bufsize 3000k -pix_fmt yuv420p -g 48 -bf 0 -fps_mode cfr \
               -af "aresample=async=1:first_pts=0" -c:a aac -b:a 128k -ar 44100 \
               -flags +global_header \
               -f fifo -fifo_format flv -queue_size 600 \
