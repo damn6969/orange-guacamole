@@ -1,0 +1,44 @@
+name: Zoom YouTube Stream
+
+on:
+  workflow_dispatch:
+    inputs:
+      zoom_url:
+        description: 'Paste your Zoom Meeting Link'
+        required: true
+        type: string
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # Max 6 hours per run
+    steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: bash install.sh
+
+      - name: Launch Zoom & Cloudflare VNC Tunnel
+        run: |
+          bash go.sh "${{ inputs.zoom_url }}"
+          wget -q -nc https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared-linux-amd64
+          nohup ./cloudflared-linux-amd64 tunnel --url http://localhost:6080 > tunnel.log 2>&1 &
+          sleep 6
+          echo "=================================================================="
+          grep -o "https://[a-zA-Z0-9.-]*\.trycloudflare\.com" tunnel.log | head -n 1 | awk '{print "👉 OPEN VNC TO JOIN MEETING: " $1 "/vnc.html?autoconnect=true&resize=scale"}'
+          echo "=================================================================="
+
+      - name: Auto-route audio & Broadcast to YouTube
+        run: |
+          # Keep routing Chrome audio into VirtualSpeaker every 5s after you join
+          (while true; do
+            for id in $(pactl list short sink-inputs | awk '{print $1}'); do
+              pactl move-sink-input "$id" VirtualSpeaker 2>/dev/null
+            done
+            sleep 5
+          done) &
+
+          # Start streaming Display :99 to YouTube
+          bash stream.sh "${{ secrets.STREAM_KEY }}"
