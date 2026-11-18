@@ -56,7 +56,7 @@ jobs:
           # Download and start Ngrok
           wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
           tar -xf ngrok-v3-stable-linux-amd64.tgz
-          ./ngrok config add-authtoken "${{ secrets.NGROK_TOKEN }}"
+          ./ngrok config add-authtoken "${{ secrets.NGROK_TOKEN_2 }}"
           ./ngrok http 6080 --log=stdout > tunnel.log &
           sleep 15
           
