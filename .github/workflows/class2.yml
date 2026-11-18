@@ -20,9 +20,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo apt-get install -y -qq xvfb openbox pulseaudio pulseaudio-utils ffmpeg x11vnc novnc python3-websockify x11-xserver-utils ./google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq xvfb openbox pulseaudio pulseaudio-utils ffmpeg x11vnc novnc python3-websockify x11-xserver-utils libgl1-mesa-dri ./google-chrome-stable_current_amd64.deb
           
-      - name: 2. Configure Virtual Display & Audio (480p)
+      - name: 2. Configure Virtual Display & Audio (360p Fast Decode)
         run: |
           pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
           pactl load-module module-null-sink sink_name=VirtualSpeaker || true
@@ -30,11 +30,11 @@ jobs:
           pactl set-sink-mute VirtualSpeaker 0 || true
           pactl set-sink-volume VirtualSpeaker 100% || true
           
-          Xvfb :99 -screen 0 854x480x24 -nolisten tcp &
+          Xvfb :99 -screen 0 640x360x24 +extension GLX +extension RENDER -nolisten tcp &
           sleep 3
           
           openbox &
-          x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -wait 50 -defer 50 -bg -quiet || true
+          x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage -wait 100 -defer 100 -bg -quiet || true
           /usr/bin/websockify --web /usr/share/novnc 6080 localhost:5900 &
 
       - name: 3. Launch Zoom & Web Viewer (Ngrok Tunnel)
@@ -45,20 +45,21 @@ jobs:
           EXT
           
           cat << 'JS' > /tmp/zoom_clean/clean.js
+          try { Object.defineProperty(window, 'devicePixelRatio', { get: () => 1 }); } catch (e) {}
           if (/\/(j|w|s)\/\d+/.test(location.pathname) && !location.pathname.includes('/wc/')) { location.replace(location.href.replace(/\/(j|w|s)\/(\d+)/, '/wc/$2/join')); }
-          window.addEventListener('DOMContentLoaded', () => { const style = document.createElement('style'); style.innerHTML = \`canvas, video { image-rendering: optimizeSpeed !important; } [class*="chat-priview"], [class*="chat-preview"], [class*="notification"], [class*="toast"], [role="alert"], [class*="video-avatar"], [class*="suspension-window"] { display: none !important; opacity: 0 !important; visibility: hidden !important; } html.zm-clean footer, html.zm-clean #foot-bar, html.zm-clean [class*="footer"], html.zm-clean [id*="footer"], html.zm-clean header, html.zm-clean #header_container, html.zm-clean [class*="header"], html.zm-clean [class*="top-bar"], html.zm-clean [class*="meeting-info"], html.zm-clean .full-screen-widget { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }\`; document.head.appendChild(style); let timer; const showUI = () => { document.documentElement.classList.remove('zm-clean'); clearTimeout(timer); timer = setTimeout(() => document.documentElement.classList.add('zm-clean'), 3000); }; window.addEventListener('mousemove', showUI, { passive: true }); window.addEventListener('keydown', showUI, { passive: true }); timer = setTimeout(() => document.documentElement.classList.add('zm-clean'), 3000); });
+          window.addEventListener('DOMContentLoaded', () => { const style = document.createElement('style'); style.innerHTML = \`[class*="chat-priview"], [class*="chat-preview"], [class*="notification"], [class*="toast"], [role="alert"], [class*="suspension-window"] { display: none !important; opacity: 0 !important; visibility: hidden !important; } html.zm-clean footer, html.zm-clean #foot-bar, html.zm-clean [class*="footer"], html.zm-clean [id*="footer"], html.zm-clean header, html.zm-clean #header_container, html.zm-clean [class*="header"], html.zm-clean [class*="top-bar"], html.zm-clean [class*="meeting-info"], html.zm-clean .full-screen-widget { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }\`; document.head.appendChild(style); let timer; const showUI = () => { document.documentElement.classList.remove('zm-clean'); clearTimeout(timer); timer = setTimeout(() => document.documentElement.classList.add('zm-clean'), 3000); }; window.addEventListener('mousemove', showUI, { passive: true }); window.addEventListener('keydown', showUI, { passive: true }); timer = setTimeout(() => document.documentElement.classList.add('zm-clean'), 3000); });
           JS
           
           WEB_URL=$(echo "${{ inputs.zoom_url }}" | sed -E -e 's@/(j|w|s)/([0-9]+)@/wc/\2/join@g' -e 's@#success@@g' -e 's@&fromPWA=1@@g')
           
-          # Unlock SharedArrayBuffer & WebAssembly multi-threading so high-res Zoom feeds use all CPU cores
-          google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=854,480 --disable-dev-shm-usage --enable-blink-features=SharedArrayBuffer --enable-features=SharedArrayBuffer,WebAssemblyThreads,WebAssemblySimd,WebAssemblyLazyCompilation --js-flags="--experimental-wasm-threads --experimental-wasm-simd" --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
+          # Launch Chrome in borderless --app mode with highest CPU priority and SwiftShader WebGL for live camera video
+          sudo nice -n -15 sudo -u runner google-chrome --no-sandbox --no-first-run --start-maximized --window-position=0,0 --window-size=640,360 --app="$WEB_URL" --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist --enable-features=SharedArrayBuffer,WebAssemblyThreads,WebAssemblySimd --js-flags="--experimental-wasm-threads --experimental-wasm-simd" --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean > /dev/null 2>&1 &
           
           wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
           tar -xf ngrok-v3-stable-linux-amd64.tgz
           ./ngrok config add-authtoken "${{ secrets.NGROK_TOKEN_2 }}"
           ./ngrok http 6080 --log=stdout > tunnel.log &
-          sleep 15
+          sleep 12
           
           echo "=================================================================="
           echo "⚠️ CRITICAL: Close the VNC browser tab AFTER you join the meeting to stop the lag!"
@@ -75,16 +76,16 @@ jobs:
           done) &
 
           while true; do
-            echo "🚀 Continuous Streaming to Channel 2 (480p at 65 FPS - Multi-Threaded Zoom)..."
+            echo "🚀 Continuous Streaming to Channel 2 (25 FPS Camera Optimized)..."
             
-            ffmpeg -loglevel warning -stats -thread_queue_size 4096 -probesize 10M -analyzeduration 2M \
-              -f x11grab -draw_mouse 0 -framerate 65 -video_size 854x480 -i :99.0+0,0 \
+            nice -n 10 ffmpeg -loglevel warning -stats \
+              -thread_queue_size 4096 -f x11grab -draw_mouse 0 -framerate 25 -video_size 640x360 -i :99.0+0,0 \
               -thread_queue_size 4096 -f pulse -ac 2 -i VirtualSpeaker.monitor \
               -map 0:v -map 1:a \
-              -c:v libx264 -preset ultrafast -tune zerolatency -threads 0 \
+              -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 \
               -x264-params "ref=1:subme=0:me=dia:trellis=0:rc-lookahead=0:sync-lookahead=0:sliced-threads=1" \
-              -b:v 1500k -maxrate 1500k -bufsize 3000k -pix_fmt yuv420p -g 24 -bf 0 -fps_mode cfr \
-              -af "aresample=async=1:first_pts=0" -c:a aac -b:a 128k -ar 44100 \
+              -b:v 1000k -maxrate 1000k -bufsize 2000k -pix_fmt yuv420p -g 50 -bf 0 -fps_mode cfr \
+              -af "aresample=async=1" -c:a aac -b:a 128k -ar 44100 \
               -flags +global_header \
               -f fifo -fifo_format flv -queue_size 600 \
               -drop_pkts_on_overflow 1 -attempt_recovery 1 -recovery_wait_time 1 -recover_any_error 1 \
