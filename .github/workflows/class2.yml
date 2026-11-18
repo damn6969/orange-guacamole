@@ -53,7 +53,6 @@ jobs:
           
           google-chrome --no-sandbox --disable-gpu --no-first-run --start-maximized --window-size=854,480 --disable-dev-shm-usage --disable-accelerated-2d-canvas --alsa-output-device=pulse --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --load-extension=/tmp/zoom_clean "$WEB_URL" > /dev/null 2>&1 &
           
-          # Download and start Ngrok
           wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
           tar -xf ngrok-v3-stable-linux-amd64.tgz
           ./ngrok config add-authtoken "${{ secrets.NGROK_TOKEN_2 }}"
@@ -75,7 +74,7 @@ jobs:
           done) &
 
           while true; do
-            echo "🚀 Continuous Streaming to Channel 2 (480p at 65 FPS)..."
+            echo "🚀 Continuous Streaming to Channel 2 (480p at 30 FPS)..."
             
             ffmpeg -loglevel warning -stats -thread_queue_size 4096 -probesize 10M -analyzeduration 2M \
               -f x11grab -draw_mouse 0 -framerate 30 -video_size 854x480 -i :99.0+0,0 \
@@ -83,7 +82,7 @@ jobs:
               -map 0:v -map 1:a \
               -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 \
               -x264-params "ref=1:subme=0:me=dia:trellis=0:rc-lookahead=0:sync-lookahead=0:sliced-threads=1" \
-              -b:v 1000k -maxrate 1000k -bufsize 2000k -pix_fmt yuv420p -g 24 -bf 0 -fps_mode cfr \
+              -b:v 1000k -maxrate 1000k -bufsize 2000k -pix_fmt yuv420p -g 60 -bf 0 -fps_mode cfr \
               -af "aresample=async=1:first_pts=0" -c:a aac -b:a 128k -ar 44100 \
               -flags +global_header \
               -f fifo -fifo_format flv -queue_size 600 \
